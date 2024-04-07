@@ -23,6 +23,7 @@ typedef struct
     // float4x4のメモリアライメントは16byteになっていて、metalには他の行列表現がない
     // そのため、C#側でバイト列を作成した際に、モデル行列のメモリアライメントは16byteになるように指定する
     float4x4 ModelMatrix;           // モデル行列
+    float4x4 ViewMatrix;            // ビュー行列
 } Uniform;
 
 /// 頂点シェーダの出力用(フラグメントシェーダ入力用)の構造体を定義します。
@@ -62,7 +63,8 @@ vertex RasterizerData sample_vertex(uint vertexID [[vertex_id]],
     packed_float3 packedPos = vertices[vertexID].Position;
     float3 pixelSpacePosition = float3(packedPos.x, packedPos.y, packedPos.z);
     // 平行移動・回転・スケールを適用するためにモデル行列をかける
-    pixelSpacePosition = (uniform.ModelMatrix * float4(pixelSpacePosition, 1.0)).xyz;
+    // カメラ位置を変更するためにビュー行列をかける
+    pixelSpacePosition = (uniform.ViewMatrix * uniform.ModelMatrix * float4(pixelSpacePosition, 1.0)).xyz;
     
     // float型にキャスト
     float2 viewportSize = float2(uniform.ViewportSize);
