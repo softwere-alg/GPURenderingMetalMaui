@@ -6,6 +6,24 @@ using MetalKit;
 
 namespace GPURenderingMetal
 {
+    public static class CGPointEx
+    {
+        public static CGPoint Add(CGPoint left, CGPoint right)
+        {
+            return new CGPoint(left.X + right.X, left.Y + right.Y);
+        }
+
+        public static CGPoint Sub(CGPoint left, CGPoint right)
+        {
+            return new CGPoint(left.X - right.X, left.Y - right.Y);
+        }
+
+        public static CGPoint Multi(NFloat left, CGPoint right)
+        {
+            return new CGPoint(left * right.X, left * right.Y);
+        }
+    }
+
     [Register("GameViewController")]
     public class GameViewController : UIViewController, IMTKViewDelegate
     {
@@ -120,13 +138,13 @@ namespace GPURenderingMetal
         /// 移動量
         /// </summary>
         private CGPoint move = CGPoint.Empty;
-        private CGPoint oldMoved = CGPoint.Empty;
+        private CGPoint prevPoint = CGPoint.Empty;
 
         /// <summary>
         /// 拡大率
         /// </summary>
         private nfloat scale = 1.0f;
-        private nfloat oldScaled = 1.0f;
+        private nfloat prevScaled = 1.0f;
 
         /// <summary>
         /// 回転量
@@ -156,20 +174,41 @@ namespace GPURenderingMetal
             {
                 if (sender.State == UIGestureRecognizerState.Began)
                 {
-                    oldMoved = move;
+                    prevPoint = CGPointEx.Multi(View.ContentScaleFactor, sender.TranslationInView(View));
                 }
-                CGPoint tmpMove = sender.TranslationInView(View);
-                move = new CGPoint(oldMoved.X + tmpMove.X, oldMoved.Y - tmpMove.Y);
+                else if (sender.State == UIGestureRecognizerState.Changed)
+                {
+                    CGPoint current = CGPointEx.Multi(View.ContentScaleFactor, sender.TranslationInView(View));
+                    CGPoint diff = CGPointEx.Sub(current, prevPoint);
+                    move = new CGPoint(move.X + diff.X, move.Y - diff.Y);
+                    prevPoint = current;
+                }
             }));
             // ピンチジェスチャー追加
             View.AddGestureRecognizer(new UIPinchGestureRecognizer((UIPinchGestureRecognizer sender) =>
             {
                 if (sender.State == UIGestureRecognizerState.Began)
                 {
-                    oldScaled = scale;
+                    prevScaled = sender.Scale;
                 }
-                nfloat tmpScale = sender.Scale;
-                scale = oldScaled * tmpScale;
+                else if (sender.State == UIGestureRecognizerState.Changed)
+                {
+                    // 画面中心を原点とした座標系での、ピンチの重心座標
+                    NFloat viewCenterX = (sender.LocationInView(View).X - View.Frame.Width / 2) * View.ContentScaleFactor;
+                    NFloat viewCenterY = (-(sender.LocationInView(View).Y - View.Frame.Height / 2)) * View.ContentScaleFactor;
+
+                    // Metalの描画座標系での、ピンチの重心座標
+                    CGPoint centerPoint = new CGPoint(-viewCenterX + move.X, -viewCenterY + move.Y);
+
+                    // 前回とのスケール比
+                    nfloat ratio = sender.Scale / prevScaled;
+
+                    scale = scale * ratio;
+                    // Metalの描画座標系での、ピンチの重心座標に移動後
+                    // ピンチの重心を画面の元の位置に調整する
+                    move = CGPointEx.Add(CGPointEx.Multi(ratio, centerPoint), new CGPoint(viewCenterX, viewCenterY));
+                    prevScaled = sender.Scale;
+                }
             }));
             // ローテーションジェスチャー追加
             View.AddGestureRecognizer(new UIRotationGestureRecognizer((UIRotationGestureRecognizer sender) =>
@@ -180,6 +219,14 @@ namespace GPURenderingMetal
                 }
                 nfloat tmpRotation = sender.Rotation;
                 rotate = oldRotated + tmpRotation;
+            }));
+            // タップジェスチャー追加
+            View.AddGestureRecognizer(new UITapGestureRecognizer((UITapGestureRecognizer sender) =>
+            {
+                NFloat centerX = sender.LocationInView(View).X - View.Frame.Width / 2;
+                NFloat centerY = -(sender.LocationInView(View).Y - View.Frame.Height / 2);
+                // タップした位置に移動
+                move = new CGPoint(move.X - View.ContentScaleFactor * centerX, move.Y - View.ContentScaleFactor * centerY);
             }));
 
             SetupMetal();
